@@ -1,42 +1,70 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
-import 'dart:math';
 
 void main() {
-  runApp(PomodoroApp());
+  runApp(MyApp());
 }
 
-class PomodoroApp extends StatelessWidget {
+class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Pomodoro Timer App',
+      title: 'Pomodoro Timer',
       theme: ThemeData(
         primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: PomodoroTimerScreen(),
+      home: PomodoroScreen(),
     );
   }
 }
 
-class PomodoroTimerScreen extends StatefulWidget {
+class PomodoroScreen extends StatefulWidget {
   @override
-  _PomodoroTimerScreenState createState() => _PomodoroTimerScreenState();
+  _PomodoroScreenState createState() => _PomodoroScreenState();
 }
 
-class _PomodoroTimerScreenState extends State<PomodoroTimerScreen> {
-  int workDuration = 25; // in minutes
-  int breakDuration = 5; // in minutes
-  int timeLeft = 25 * 60; // in seconds
-  bool isRunning = false;
-  bool isWorking = true;
-  Timer? timer;
+class _PomodoroScreenState extends State<PomodoroScreen> {
+  PomodoroTimer _timer = PomodoroTimer(3);
+
+  void _updateUI() {
+    setState(() {});
+  }
+  Widget _buildCircularProgress() {
+    double progress = 1 - (_timer.remainingTime / _timer.initialTime);
+    int minutes = _timer.remainingTime ~/ 60;
+    int seconds = _timer.remainingTime % 60;
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        SizedBox(
+          width: 150,
+          height: 150,
+          child: CircularProgressIndicator(
+            value: progress,
+            strokeWidth: 10,
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+          ),
+        ),
+        Text(
+          '$minutes:${seconds.toString().padLeft(2, '0')}',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+  Widget _buildHistoryList() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Session History:'),
+        for (int sessionTime in _timer.history)
+          Text('$sessionTime seconds'),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    double progress = 1.0 - (timeLeft / (isWorking ? workDuration : breakDuration * 60));
-
     return Scaffold(
       appBar: AppBar(
         title: Text('Pomodoro Timer'),
@@ -45,199 +73,77 @@ class _PomodoroTimerScreenState extends State<PomodoroTimerScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CustomPaint(
-              size: Size(120, 120),
-              painter: ProgressPainter(
-                (isWorking ? timeLeft : breakDuration * 60).toDouble() / (isWorking ? workDuration * 60 : breakDuration * 60),
-              ),
+
+            _buildCircularProgress(),
+            SizedBox(height: 20), // Adding vertical space
+            //Text('${_timer.remainingTime ~/ 60}:${_timer.remainingTime % 60}'),
+            ElevatedButton(
+              onPressed: () {
+                if (!_timer.isRunning) {
+                  _timer.startTimer(_updateUI);
+                } else {
+                  _timer.pauseTimer();
+                }
+              },
+              child: Text(_timer.isRunning ? 'Pause' : 'Start'),
             ),
-            SizedBox(height: 20),
-            Text(
-              formatTime(timeLeft),
-              style: TextStyle(fontSize: 48),
+            ElevatedButton(
+              onPressed: () {
+                _timer.resetTimer();
+                _updateUI();
+              },
+              child: Text('Reset'),
             ),
-            SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ElevatedButton(
-                  onPressed: isRunning ? null : () => updateWorkDurationDialog(),
-                  child: Text('Set Work'),
-                ),
-                SizedBox(width: 20),
-                ElevatedButton(
-                  onPressed: isRunning ? null : () => updateBreakDurationDialog(),
-                  child: Text('Set Break'),
-                ),
-              ],
-            ),
-            SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ElevatedButton(
-                  onPressed: () {
-                    startTimer();
-                  },
-                  child: Text('Start'),
-                ),
-                SizedBox(width: 20),
-                ElevatedButton(
-                  onPressed: () {
-                    stopTimer();
-                  },
-                  child: Text('Stop'),
-                ),
-                SizedBox(width: 20),
-                ElevatedButton(
-                  onPressed: () {
-                    resetTimer();
-                  },
-                  child: Text('Reset'),
-                ),
-              ],
-            ),
+            SizedBox(height: 20), // Adding vertical space
+            _buildHistoryList(), // Display Pomodoro session history
           ],
         ),
       ),
     );
+  }
+}
 
+
+class PomodoroTimer {
+  int initialTime;
+  int remainingTime = 0; // Initialize to 0
+  bool isRunning = false;
+
+  PomodoroTimer(this.initialTime) {
+    resetTimer();
   }
 
-  void startTimer() {
+  void startTimer(VoidCallback updateUI) {
     if (!isRunning) {
-      timer = Timer.periodic(Duration(seconds: 1), (timer) {
-        if (timeLeft > 0) {
-          setState(() {
-            timeLeft--;
-          });
-        } else {
-          // Timer is completed, switch between Work and Break modes
-          if (isWorking) {
-            timeLeft = breakDuration * 60;
-          } else {
-            timeLeft = workDuration * 60;
-          }
-          isWorking = !isWorking;
-        }
-      });
-      setState(() {
-        isRunning = true;
-      });
+      isRunning = true;
+      _tick(updateUI);
     }
   }
 
-  void stopTimer() {
-    setState(() {
-      isRunning = false;
+  List<int> history = []; // List to store completed Pomodoro session times
+
+  void _tick(VoidCallback updateUI) {
+    Future.delayed(Duration(seconds: 1), () {
+      if (isRunning && remainingTime > 0) {
+        remainingTime--;
+        updateUI();
+        _tick(updateUI);
+      } else {
+        isRunning = false;
+        if (remainingTime == 0) {
+          history.add(initialTime);
+        }
+        updateUI();
+      }
     });
-    timer?.cancel();
+  }
+
+  void pauseTimer() {
+    isRunning = false;
   }
 
   void resetTimer() {
-    setState(() {
-      stopTimer();
-      isWorking = true;
-      timeLeft = workDuration * 60;
-    });
-  }
-
-  void updateWorkDurationDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Set Work Duration'),
-          content: TextField(
-            keyboardType: TextInputType.number,
-            onChanged: (value) {
-              setState(() {
-                workDuration = int.tryParse(value) ?? workDuration;
-                if (isWorking) {
-                  timeLeft = workDuration * 60;
-                }
-              });
-            },
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-  void updateBreakDurationDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Set Break Duration'),
-          content: TextField(
-            keyboardType: TextInputType.number,
-            onChanged: (value) {
-              setState(() {
-                breakDuration = int.tryParse(value) ?? breakDuration;
-                if (!isWorking) {
-                  timeLeft = breakDuration * 60;
-                }
-              });
-            },
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-
-  String formatTime(int seconds) {
-    int minutes = seconds ~/ 60;
-    int remainingSeconds = seconds % 60;
-    return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
+    isRunning = false;
+    remainingTime = initialTime;
   }
 }
-
-class ProgressPainter extends CustomPainter {
-  final double progress;
-
-  ProgressPainter(this.progress);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    Paint paint = Paint()
-      ..color = Colors.blue
-      ..strokeWidth = 10.0
-      ..style = PaintingStyle.stroke;
-
-    double radius = size.width / 2;
-    Offset center = Offset(size.width / 2, size.height / 2);
-
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -pi / 2,
-      2 * pi * progress,
-      false,
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return true;
-  }
-}
-void updateWorkDurationDialog() {}
-
-void updateBreakDurationDialog() {}
